@@ -5,6 +5,9 @@ import io
 import time
 from typing import List, Dict, Optional
 
+# Fix Pillow compatibility issues
+import pillow_fix
+
 # Import custom modules
 from config import STREAMLIT_CONFIG, MAX_FILE_SIZE_MB, ALLOWED_EXTENSIONS
 from utils import (
@@ -13,6 +16,7 @@ from utils import (
 )
 from ocr_engine import OCREngineFactory, get_best_ocr_engine
 from document_generator import WordDocumentGenerator
+from handwriting_ocr import create_handwriting_engine
 
 # Configure page
 st.set_page_config(**STREAMLIT_CONFIG)
@@ -20,8 +24,16 @@ st.set_page_config(**STREAMLIT_CONFIG)
 class ImageToWordConverter:
     """Main converter class that orchestrates the conversion process"""
     
-    def __init__(self, ocr_engine_type: str = "easyocr"):
-        self.ocr_engine = OCREngineFactory.create_engine(ocr_engine_type)
+    def __init__(self, ocr_engine_type: str = "easyocr", text_type: str = "Printed Text"):
+        self.text_type = text_type
+        
+        if text_type == "Handwritten Text":
+            self.handwriting_engine = create_handwriting_engine()
+            self.ocr_engine = OCREngineFactory.create_engine(ocr_engine_type)
+        else:
+            self.handwriting_engine = None
+            self.ocr_engine = OCREngineFactory.create_engine(ocr_engine_type)
+            
         if self.ocr_engine is None:
             self.ocr_engine = get_best_ocr_engine()
     
@@ -37,7 +49,15 @@ class ImageToWordConverter:
             image = resize_image_if_needed(image)
         
         # Extract text with positions
-        text_blocks = self.ocr_engine.extract_text_with_positions(image)
+        if self.text_type == "Handwritten Text" and self.handwriting_engine:
+            text_blocks = self.handwriting_engine.extract_with_multiple_attempts(image)
+        elif self.text_type == "Mixed" and self.handwriting_engine:
+            # Try both engines and combine results
+            text_blocks1 = self.ocr_engine.extract_text_with_positions(image)
+            text_blocks2 = self.handwriting_engine.extract_handwritten_text(image)
+            text_blocks = text_blocks1 + text_blocks2
+        else:
+            text_blocks = self.ocr_engine.extract_text_with_positions(image)
         
         if not text_blocks:
             return {
@@ -173,6 +193,14 @@ def main():
     
     # Processing options
     st.sidebar.subheader("🔧 Processing Options")
+    
+    # Text type selection
+    text_type = st.sidebar.selectbox(
+        "Text Type",
+        ["Printed Text", "Handwritten Text", "Mixed"],
+        help="Select the type of text in your image for better OCR results"
+    )
+    
     enhance_quality = st.sidebar.checkbox("Enhance Image Quality", value=True, 
                                          help="Apply image enhancement for better OCR results")
     detect_tables = st.sidebar.checkbox("Detect Tables", value=True,
@@ -185,6 +213,17 @@ def main():
     # File size limit info
     st.sidebar.info(f"📁 Maximum file size: {MAX_FILE_SIZE_MB}MB")
     st.sidebar.info(f"📋 Supported formats: {', '.join(ALLOWED_EXTENSIONS)}")
+    
+    # Tips based on text type
+    if text_type == "Handwritten Text":
+        st.sidebar.warning("📝 **Handwriting Tips:**\n"
+                          "• Use high-resolution images\n"
+                          "• Ensure good lighting\n"
+                          "• Clear, legible handwriting works best\n"
+                          "• Dark ink on light background preferred")
+    elif text_type == "Mixed":
+        st.sidebar.info("🔄 **Mixed Text Mode:**\n"
+                       "Uses both engines for better coverage of printed and handwritten text")
     
     # Main content area
     col1, col2 = st.columns([1, 1])
@@ -222,7 +261,7 @@ def main():
                 with st.spinner("🔍 Processing image... This may take a few moments."):
                     try:
                         # Initialize converter
-                        converter = ImageToWordConverter(selected_engine)
+                        converter = ImageToWordConverter(selected_engine, text_type)
                         
                         # Process image
                         result = converter.process_image(

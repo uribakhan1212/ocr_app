@@ -121,12 +121,12 @@ class EasyOCREngine(OCREngine):
         if len(img_array.shape) == 3:
             img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
         
-        # EasyOCR works well with minimal preprocessing
-        # Apply slight denoising
+        # EasyOCR works well with minimal preprocessing for handwritten text
+        # Apply slight denoising but preserve handwriting characteristics
         if len(img_array.shape) == 3:
-            denoised = cv2.fastNlMeansDenoisingColored(img_array, None, 10, 10, 7, 21)
+            denoised = cv2.fastNlMeansDenoisingColored(img_array, None, 3, 3, 7, 21)
         else:
-            denoised = cv2.fastNlMeansDenoising(img_array, None, 10, 7, 21)
+            denoised = cv2.fastNlMeansDenoising(img_array, None, 3, 7, 21)
         
         return denoised
     
@@ -138,12 +138,20 @@ class EasyOCREngine(OCREngine):
         try:
             processed_img = self.preprocess_image(image)
             
-            # Use EasyOCR to extract text
-            results = self.reader.readtext(processed_img)
+            # Use EasyOCR with settings optimized for handwritten text
+            results = self.reader.readtext(
+                processed_img,
+                detail=1,  # Return bounding box coordinates
+                paragraph=False,  # Don't group into paragraphs for handwriting
+                width_ths=0.7,  # Adjust for handwriting spacing
+                height_ths=0.7,  # Adjust for handwriting spacing
+                decoder='greedy'  # Better for handwritten text
+            )
             
             text_blocks = []
             for (bbox, text, confidence) in results:
-                if confidence > 0.3:  # Filter low confidence results
+                # Lower confidence threshold for handwritten text
+                if confidence > 0.1:  # Much lower threshold for handwriting
                     # Calculate bounding box center
                     x_center = (bbox[0][0] + bbox[2][0]) / 2
                     y_center = (bbox[0][1] + bbox[2][1]) / 2
