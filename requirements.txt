@@ -14,8 +14,11 @@ pytesseract==0.3.10
 python-docx==0.8.11
 
 # numpy + pandas compatibility
-numpy>=1.26.0,<2.4.0
-pandas==2.1.1
+# numpy>=1.26.0,<2.4.0
+# pandas==2.1.1
+pandas>=2.2.2
+numpy>=1.26.4
+
 
 # Pillow with Python 3.13 wheels
 Pillow>=10.2.0
